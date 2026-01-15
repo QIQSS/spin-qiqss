@@ -17,9 +17,9 @@ data_path = r"D:\test_opx"
 
 # %%
 # Librairies et fonctions
+# %gui qt
 import matplotlib.pyplot as plt
 import numpy as np
-from dataclasses import dataclass
 from typing import List
 import json
 from time import monotonic, sleep
@@ -28,6 +28,7 @@ from pathlib import Path
 from IPython import get_ipython
 import os, datetime
 import h5py
+from matplotlib import pyplot as plt
 
 import sys
 sys.path.append("..")
@@ -262,6 +263,111 @@ def sweep_file(
     return f
 
 
+
+# %%
+from config import qop_ip, cluster_name, u, config, cw_len
+from videomode_lib.videomode import VideoModeWindow, make_sweep
+
+long_axis = make_sweep(-15e-3, 15e-3, 65, "P2")
+short_axis = make_sweep(-20e-3, 20e-3, 130, "P1")
+
+cw_readout_len = cw_len
+cw_readout_freq = 300 * u.MHz
+cw_amp = 1.5
+
+wait_before_meas = 1000 * u.ns
+cw_step_len = cw_readout_len + 2*wait_before_meas
+# seconds -> clock cycle:
+wait_duration = int(wait_before_meas / 4)
+short_duration = int(cw_step_len/4)
+long_duration = short_duration * short_axis.nbpts + 4*wait_duration
+
+# Def config
+with program() as videomode:
+    n, m = declare(fixed), declare(fixed)
+    update_frequency("RF-SET1", cw_readout_freq)
+    
+    r_st = declare_stream() # R
+    t_st = declare_stream() # Theta
+
+    with while_(True):
+        pause()
+
+        with for_each_(n, long_axis.stickysteps):
+            play("step"*amp(n), long_axis.element, duration=long_duration)
+
+            with for_each_(m, short_axis.stickysteps):
+                play("step"*amp(m), short_axis.element, duration=short_duration)
+
+                r, t = readout_demod_macro(
+                    element="RF-SET1",
+                    operation="readout",
+                    element_output="out1",
+                    amplitude=cw_amp,
+                    mode="rt",)
+
+                save(r, r_st)
+                save(t, t_st)
+
+            ramp_to_zero(short_axis.element)
+        ramp_to_zero(long_axis.element)
+
+    
+
+    with stream_processing():
+        r_st.buffer(short_axis.nbpts).buffer(long_axis.nbpts).save("R")
+        t_st.buffer(short_axis.nbpts).buffer(long_axis.nbpts).save("Theta")
+
+
+qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name)
+qm = qmm.open_qm(config, close_other_machines=True)
+job = qm.execute(videomode)
+
+def get_map(job):
+    # Play opx
+    # Wait for pause
+    # Get result
+    job.resume()
+    while not job.is_paused():
+        sleep(0.001)
+    r = job.result_handles.get("R").fetch_all()
+    t = job.result_handles.get("Theta").fetch_all()
+    return r
+
+vm = VideoModeWindow(
+    dim = 2,
+    fn_get = lambda: get_map(job),
+    xlabel = long_axis.element,
+    ylabel = short_axis.element,
+    axes_dict = {
+        "x": [long_axis.start, long_axis.stop],
+        "y": [short_axis.start, short_axis.stop],
+    }
+)
+
+# %%
+get_map(job)
+
+
+# %%
+def plot_map(fig, ax, data, title='', label=""):
+    extent = (long_axis.start, long_axis.stop, short_axis.start, short_axis.stop)
+    im = ax.imshow(data.T, extent=extent, aspect='auto', origin='lower', interpolation='none')
+    ax.set_xlabel(long_axis.element + " (V)")
+    ax.set_ylabel(short_axis.element + " (V)")
+    ax.set_title(title)
+    cb = fig.colorbar(im, label=label)
+    return fig, ax, cb
+
+r = job.result_handles.get("R").fetch_all()
+t = job.result_handles.get("Theta").fetch_all()
+
+fig, [ax1, ax2] = plt.subplots(1, 2)
+plot_map(fig, ax1, r, 'Amplitude', label="Amplitude (dB)")
+plot_map(fig, ax2, t, 'Phase', label="phase (rad)")
+fig.tight_layout()
+plt.show()
+
 # %%
 from config import qop_ip, cluster_name, u, config
 
@@ -309,36 +415,3 @@ with sweep_file(
 
     while not f.flush_data(job.result_handles):
         sleep(2)
-
-# %% [markdown]
-# Affichage
-
-# %%
-with h5py.File(filename, 'r') as f:
-    ax_names = f["data"].attrs["sweeped_ax_names"]
-
-    # chargement
-    x = f["data"][ax_names[0]][:]
-    r = f["data"]["R"][:]
-    t = f["data"]["Theta"][:]
-    ###
-    # traitement (déroule, dépente)
-    t = np.unwrap(t)
-    t = t - (t[-1]-t[0])/(x[-1]-x[0]) * x
-    ###
-    # trace
-    fig, ax = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-    ax[0].plot(x, r)
-    ax[1].plot(x, t)
-
-    ax[0].set_ylabel("R")
-    ax[0].grid(True)
-    ax[0].set_title(filename)
-
-    ax[1].set_xlabel("Frequency (Hz)")
-    ax[1].set_ylabel("Theta")
-    ax[1].grid(True)
-
-    fig.tight_layout()
-    plt.show()
-    ###

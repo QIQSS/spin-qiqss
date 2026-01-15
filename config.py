@@ -23,7 +23,7 @@ u = unit(coerce_to_integer=True)
 # Time of flight
 time_of_flight = 192
 
-cw_len = 2_000
+cw_len = 8_000
 flattop_cosine = flattop_cosine_waveform(1, 500, 100) # 100 + 500 + 100
 
 
@@ -49,7 +49,7 @@ config = {
                             "sampling_rate": sampling_rate_gate,
                             "output_mode": "amplified",
                             "filter": {
-                                "exponential": [(100, 16967)],
+                                #"exponential": [(100, 16967)],
                             },
                         },
                         P2_port: {
@@ -58,7 +58,7 @@ config = {
                             "sampling_rate": sampling_rate_gate,
                             "output_mode": "amplified",
                             "filter": {
-                                "exponential": [(100, 17703)],
+                                #"exponential": [(100, 17703)],
                             },
                         },
                     },
