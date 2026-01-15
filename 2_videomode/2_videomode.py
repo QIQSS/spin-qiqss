@@ -51,6 +51,7 @@ from qm.qua import (
     update_frequency,
     play, pause, amp, 
     ramp_to_zero, ramp,
+    FUNCTIONS
 )
 from qm import QuantumMachinesManager, SimulationConfig
 from qm.qua.lib import Math as mth
@@ -266,15 +267,15 @@ def sweep_file(
 
 # %%
 from config import qop_ip, cluster_name, u, config, cw_len
-from videomode_lib.videomode import VideoModeWindow, make_sweep
+from videomode_lib.videomode import VideoModeWindow, Sweep
 
-long_axis = make_sweep(-15e-3, 15e-3, 65, "P2")
-short_axis = make_sweep(-20e-3, 20e-3, 130, "P1")
+long_axis = Sweep.from_step(-15e-3, 15e-3, .2e-3, "P2")
+short_axis = Sweep.from_step(-20e-3, 20e-3, .2e-3, "P1")
 
-cw_readout_len = cw_len
 cw_readout_freq = 300 * u.MHz
 cw_amp = 1.5
 
+cw_readout_len = cw_len
 wait_before_meas = 1000 * u.ns
 cw_step_len = cw_readout_len + 2*wait_before_meas
 # seconds -> clock cycle:
@@ -284,134 +285,111 @@ long_duration = short_duration * short_axis.nbpts + 4*wait_duration
 
 # Def config
 with program() as videomode:
-    n, m = declare(fixed), declare(fixed)
     update_frequency("RF-SET1", cw_readout_freq)
-    
+    n, m = declare(fixed), declare(fixed)    
     r_st = declare_stream() # R
     t_st = declare_stream() # Theta
-
+    #adc_st = declare_stream(adc_trace=True)
     with while_(True):
         pause()
-
         with for_each_(n, long_axis.stickysteps):
             play("step"*amp(n), long_axis.element, duration=long_duration)
-
             with for_each_(m, short_axis.stickysteps):
                 play("step"*amp(m), short_axis.element, duration=short_duration)
-
                 r, t = readout_demod_macro(
                     element="RF-SET1",
                     operation="readout",
                     element_output="out1",
                     amplitude=cw_amp,
                     mode="rt",)
-
                 save(r, r_st)
                 save(t, t_st)
-
+                #measure("raw", "oscillo", adc_stream=adc_st)
             ramp_to_zero(short_axis.element)
+
         ramp_to_zero(long_axis.element)
 
-    
-
     with stream_processing():
+        # (adc_st
+        #     .input1()
+        #     .real()
+        #     .map(FUNCTIONS.average())
+        #     .buffer(short_axis.nbpts)
+        #     .buffer(long_axis.nbpts)
+        #     .save('raw1')
+        # )
         r_st.buffer(short_axis.nbpts).buffer(long_axis.nbpts).save("R")
         t_st.buffer(short_axis.nbpts).buffer(long_axis.nbpts).save("Theta")
-
 
 qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name)
 qm = qmm.open_qm(config, close_other_machines=True)
 job = qm.execute(videomode)
 
-def get_map(job):
-    # Play opx
-    # Wait for pause
-    # Get result
-    job.resume()
-    while not job.is_paused():
-        sleep(0.001)
-    r = job.result_handles.get("R").fetch_all()
-    t = job.result_handles.get("Theta").fetch_all()
-    return r
-
-vm = VideoModeWindow(
-    dim = 2,
-    fn_get = lambda: get_map(job),
-    xlabel = long_axis.element,
-    ylabel = short_axis.element,
-    axes_dict = {
-        "x": [long_axis.start, long_axis.stop],
-        "y": [short_axis.start, short_axis.stop],
-    }
+vm = VideoModeWindow.from_job(
+   job, save_path=path(),
+   out_name="R",
+   short_axis=short_axis,
+   long_axis=long_axis
 )
+# vm2 = VideoModeWindow.from_job(
+#    job,
+#    out_name="Theta",
+#    short_axis=short_axis,
+#    long_axis=long_axis,
+# )
 
 # %%
-get_map(job)
+def saveto(data_2d):
+    filename = path()+"%T_"".hdf5"
+    filename = expand_filename(filename)
+    with sweep_file(
+        filename,
+        [long_axis.element, short_axis.element],
+        [long_axis.points, short_axis.points],
+        ["out_name"],
+    ) as file:
+        print(data_2d)
+        print(file["data"])
+        print(file["data"]["out_name"])
+        #file["data"]["out_name"] = data_2d
+        #print(data_2d.shape)
 
+        file.flush()
+    print(f"Vm data saved: {filename}")
+saveto(None)
+
+
+# %% [markdown]
+# Acquisition et trace sans fenêtre continue:
 
 # %%
+# Get and plot one map
 def plot_map(fig, ax, data, title='', label=""):
     extent = (long_axis.start, long_axis.stop, short_axis.start, short_axis.stop)
     im = ax.imshow(data.T, extent=extent, aspect='auto', origin='lower', interpolation='none')
-    ax.set_xlabel(long_axis.element + " (V)")
-    ax.set_ylabel(short_axis.element + " (V)")
-    ax.set_title(title)
-    cb = fig.colorbar(im, label=label)
+    ax.set_xlabel(f"delta {long_axis.element} (V)")
+    ax.set_ylabel(f"delta {short_axis.element} (V)")
+    cb = fig.colorbar(
+        im,
+        ax=ax,
+        orientation='horizontal',
+        location='top',
+    )
+    cb.set_label(label)
+    cb.ax.xaxis.set_label_position('top')
+    cb.ax.xaxis.set_ticks_position('top')
+
     return fig, ax, cb
+
+job.resume()
+while not job.is_paused():
+    sleep(0.001)
 
 r = job.result_handles.get("R").fetch_all()
 t = job.result_handles.get("Theta").fetch_all()
 
 fig, [ax1, ax2] = plt.subplots(1, 2)
-plot_map(fig, ax1, r, 'Amplitude', label="Amplitude (dB)")
-plot_map(fig, ax2, t, 'Phase', label="phase (rad)")
+plot_map(fig, ax1, r, 'Amplitude', label="Amplitude")
+plot_map(fig, ax2, t, 'Phase', label="Phase")
 fig.tight_layout()
 plt.show()
-
-# %%
-from config import qop_ip, cluster_name, u, config
-
-frequencies = np.arange(0e6, 1000e6+1, .01e6)
-cw_amp = 1
-
-with program() as sweep_rf:
-
-    f = declare(int)  # QUA variable for the readout frequency
-    r_st = declare_stream()
-    t_st = declare_stream()
-
-    with for_(*from_array(f, frequencies)):
-
-        update_frequency("RF-SET1", f)
-        r, t = readout_demod_macro(
-                element="RF-SET1",
-                operation="readout",
-                element_output="out1",
-                amplitude=cw_amp,
-                mode="rt",)
-
-        save(r, r_st)
-        save(t, t_st)
-
-    with stream_processing():
-        r_st.save_all("R")
-        t_st.save_all("Theta")
-
-
-qmm = QuantumMachinesManager(host=qop_ip, cluster_name=cluster_name)
-qm = qmm.open_qm(config, close_other_machines=True)
-job = qm.execute(sweep_rf)
-
-filename = expand_filename(path()+"%T_test_opx.hdf5")
-with sweep_file(
-    filename,
-    ax_names=["frequence (Hz)"],
-    ax_values=[frequencies],
-    out_names=["R", "Theta"],
-    # -- meta:
-    cell=get_cell_content(), 
-    config=config.copy()
-) as f:
-
-    while not f.flush_data(job.result_handles):
-        sleep(2)

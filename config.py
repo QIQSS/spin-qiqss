@@ -23,7 +23,7 @@ u = unit(coerce_to_integer=True)
 # Time of flight
 time_of_flight = 192
 
-cw_len = 8_000
+cw_len = 1_000
 flattop_cosine = flattop_cosine_waveform(1, 500, 100) # 100 + 500 + 100
 
 
@@ -39,24 +39,24 @@ config = {
                     "type": "LF",
                     "analog_outputs": {
                         RF_SET1_port: {
-                            "offset": 0.068,  # Amplified
+                            "offset": 0.068,  # Amplified +- 2.5
                             "sampling_rate": sampling_rate_rf,
                             "output_mode": "amplified",
                         },
                         P1_port: {
-                            # "offset": 0.008,  # Direct
-                            "offset": 0.045,  # Amplified
+                            "offset": 0.008,  # Direct +- .5
+                            # "offset": 0.045,  # Amplified
                             "sampling_rate": sampling_rate_gate,
-                            "output_mode": "amplified",
+                            "output_mode": "direct",
                             "filter": {
                                 #"exponential": [(100, 16967)],
                             },
                         },
                         P2_port: {
-                            # "offset": 0.001,  # Direct
-                            "offset": 0.017,  # Amplified
+                            "offset": 0.001,  # Direct
+                            # "offset": 0.017,  # Amplified
                             "sampling_rate": sampling_rate_gate,
-                            "output_mode": "amplified",
+                            "output_mode": "direct",
                             "filter": {
                                 #"exponential": [(100, 17703)],
                             },
@@ -106,7 +106,7 @@ config = {
             },
             "sticky": {
                 "analog": True,
-                "duration": 1000
+                "duration": 1000 # ramp duration
             }
         },
         "P2": {
@@ -119,7 +119,7 @@ config = {
             },
             "sticky": {
                 "analog": True,
-                "duration": 1000
+                "duration": 1000 # ramp duration
             }
         },
         "oscillo": {

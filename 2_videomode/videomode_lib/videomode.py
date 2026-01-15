@@ -3,6 +3,7 @@ import traceback
 from time import sleep
 from typing import Any, Callable, Dict, List
 from dataclasses import dataclass
+import os 
 
 import numpy as np
 import numpy.typing as npt
@@ -40,14 +41,87 @@ class Sweep:
     element: str
     stickysteps: List[int]
 
-def make_sweep(start, stop, nbpts, element):
-    points = np.linspace(start, stop, nbpts)
-    step = (stop-start)/nbpts
-    stickysteps = np.ones(nbpts, dtype=int)*step
-    stickysteps[0] = start
-    return Sweep(start, stop, step, nbpts, points, element, stickysteps)
+    @staticmethod
+    def _make_stickysteps(start, nbpts, step, element=''):
+        stickysteps = np.ones(nbpts, dtype=int)*step
+        stickysteps[0] = start
+        if step < .155e-3:
+            print(f"Step {step} probably too low for {element} axis")
+        return stickysteps
+
+    @staticmethod
+    def from_nbpts(start, stop, nbpts, element):
+        points = np.linspace(start, stop, nbpts)
+        step = (stop-start)/nbpts
+        stickysteps = Sweep._make_stickysteps(start, nbpts, step, element)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps)
+
+    @staticmethod
+    def from_step(start, stop, step, element):
+        points = np.arange(start, stop, step)
+        nbpts = len(points)
+        stickysteps = Sweep._make_stickysteps(start, nbpts, step, element)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps)
 
 class VideoModeWindow(QMainWindow):
+
+    @staticmethod
+    def from_job(
+        job, # qm job
+        long_axis: Sweep, 
+        short_axis: Sweep,
+        out_name: str,
+        save_path: str = None,
+        **kwargs):
+        """
+        Make a window from an opx qua job.
+        Generate a function for getting out_name in job.results_handle
+        The result must be a 2d array.
+        Job is must have a pause().
+        """
+        def get_map(job):
+            # Play opx
+            # Wait for pause
+            # Get result
+            handle = job.result_handles.get(out_name)
+            job.resume()
+            while not job.is_paused() and len(handle) != 0:
+                sleep(0.001)
+            try:
+                res = handle.fetch_all()
+            except KeyError:
+                return get_map(job)
+            return res
+
+        def saveto(data_2d):
+            filename = save_path+"%T_"+out_name+".hdf5"
+            filename = expand_filename(filename)
+            with sweep_file(
+                filename,
+                [long_axis.element, short_axis.element],
+                [long_axis.points, short_axis.points],
+                [out_name],
+            ) as file:
+                file["data"][out_name][...] = data_2d.T
+                print(data_2d.shape)
+
+                file.flush()
+            print(f"Vm data saved: {filename}")
+
+        return VideoModeWindow(
+            dim = 2,
+            fn_get = lambda: get_map(job),
+            xlabel = long_axis.element,
+            ylabel = short_axis.element,
+            axes_dict = {
+                "x": [long_axis.start, long_axis.stop],
+                "y": [short_axis.start, short_axis.stop],
+            },
+            win_title = f"vm {out_name}",
+            saveto_function = saveto if save_path is not None else None,
+            **kwargs
+        )
+
     def __init__(
         self,
         fn_get: Callable[..., Any] | None = None,
@@ -71,7 +145,9 @@ class VideoModeWindow(QMainWindow):
         ysweep: "SweepAxis|None" = None,
         xsweep: "SweepAxis|None" = None,
         window_size: Literal[False, "wide", "wider"] = False,
-        make_app: bool = False,
+        make_app: bool = True,
+        win_title: str = "Video mode",
+        saveto_function = None,
     ):
         """
         Opens a window and start a thread that exec and show `fn_get`.
@@ -171,7 +247,7 @@ class VideoModeWindow(QMainWindow):
         self.pause_at_max_avg = False
 
         # UI
-        self.setWindowTitle("Video mode")
+        self.setWindowTitle(win_title)
 
         splitter = QSplitter()
         self.graph: pg.PlotWidget = pg.PlotWidget()
@@ -190,6 +266,12 @@ class VideoModeWindow(QMainWindow):
         self.btnPlay.clicked.connect(self.togglePlay)
         self.btnCopy = QPushButton("Copy to clipboard")
         self.btnCopy.clicked.connect(self.copyToClipboard)
+        if saveto_function is not None:
+            self.btnSave = QPushButton("Save") if saveto_function else None
+            self.btnSave.clicked.connect(
+                lambda: saveto_function(
+                    self.image.image.T if self.dim == 2 else self.curve.getData[1])
+                )
         self.spinAvg = QSpinBox()
         self.progress = QProgressBar()
         self.progress.setMaximum(self.navg)
@@ -198,10 +280,13 @@ class VideoModeWindow(QMainWindow):
         self.spinAvg.setValue(1)
         self.spinAvg.valueChanged.connect(self.setNavg)
         self.lblFps = QLabel(". fps")
-        self.commands.addWidget(self.btnPlay, 0, 0)
-        self.commands.addWidget(self.btnCopy, 1, 0)
-        self.commands.addWidget(self.spinAvg, 2, 0)
-        self.commands.addWidget(self.progress, 3, 0)
+        n = 0
+        self.commands.addWidget(self.btnPlay, n, 0); n+=1
+        self.commands.addWidget(self.btnCopy, n, 0); n+=1
+        if saveto_function: 
+            self.commands.addWidget(self.btnSave, n, 0); n+=1
+        self.commands.addWidget(self.spinAvg, n, 0); n+=1
+        self.commands.addWidget(self.progress, n, 0); n+=1
         self.btnYminus = QPushButton("y-")
         self.btnYplus = QPushButton("y+")
         self.btnYminus.clicked.connect(lambda: self.yShift(direction=-1))
@@ -209,11 +294,11 @@ class VideoModeWindow(QMainWindow):
         self.spinYstep = PyScientificSpinBox()
         self.spinYstep.setValue(0.005)
         if (dim == 2 or self._wrap_mode) and fn_yshift is not None:
-            self.commands.addWidget(self.btnYplus, 5, 0)
-            self.commands.addWidget(self.spinYstep, 6, 0)
-            self.commands.addWidget(self.btnYminus, 7, 0)
+            self.commands.addWidget(self.btnYplus, n, 0); n+=1
+            self.commands.addWidget(self.spinYstep, n, 0); n+=1
+            self.commands.addWidget(self.btnYminus, n, 0); n+=1
 
-        self.commands.addWidget(self.lblFps, 8, 0)
+        self.commands.addWidget(self.lblFps, n, 0); n+=1
         self.left.setLayout(self.commands)
 
         self.right = QWidget()
@@ -442,6 +527,12 @@ class VideoModeWindow(QMainWindow):
             return
         clipboard = self.app.clipboard()
         exp = pg.exporters.ImageExporter(self.graph.scene())
+        p = exp.parameters()
+        p["antialias"] = False
+        #p['width'] = 1000
+        #p['height'] = 1000
+        from PyQt5.QtGui import QColor
+        p['background'] = QColor(255,255,255)
         exp.export(copy=True)
         clipboard.setImage(exp.png)
 
@@ -557,6 +648,99 @@ class SweepAxis:
     def __len__(self) -> int:
         return len(self.val_list)
 
+
+# COPIED FROM IPYNB.
+import h5py
+import json
+import datetime
+
+def h5_dump_dict(grp:h5py.File, **dict_):
+    """
+    Ajoute des dict en tant qu'attributs dans le group "grp" d'un fichier.
+    La fonction essaie d'enregistrer les métadonnées directement. Si l'enregistrement
+    échoue, les données sont sérialisées.
+
+    Args:
+        grp: h5py.File ou h5py.Group
+        dict_: dictionnaire
+    """
+    for key, val in dict_.items():
+        try:
+            grp.attrs[key] = val
+        except:
+            grp.attrs[key] = json.dumps(val, indent=2)
+
+    grp.file.flush() # Note: File.file is file so this work even if grp is a File
+
+def _check_ax_args(ax_names, ax_values):
+    if ax_names != []:
+        if len(ax_values) != len(ax_names):
+            raise(ValueError, f"axs (size {len(ax_values)}) and ax_names (size {len(ax_names)}) must be of same length.")
+    else:
+        ax_names = [f"ax{idx}" for idx in range(len(ax_values))]
+    return ax_names, ax_values
+
+def expand_filename(filename):
+    filename = filename.replace("%T", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+    return filename
+
+def sweep_file(
+    filename: str,
+    ax_names: list[str] = [],
+    ax_values: list[np.ndarray] = [],
+    out_names: list[str] = [],
+    print_progress_on_flush: bool = True,
+    **metadata
+):
+    """ 
+    Crée et retourne le fichier hdf5.
+    - out_names: nom des variables de res_handles à sauvegarder.
+    - définie une fonction `flush_data(res_handles)` pour ajouter les nouvelles données disponibles.
+
+    structure du fichier
+    data:
+        attrs: 
+            "sweeped_ax_names": ["x", "y", ...]
+            "result_data_names": ["out1", "out2", ...]
+        x: array
+        y: array
+        ...
+        out1: array  ->  se rempli avec .flush_data(qmjob.res_handles)
+        out2: array
+        ...
+    meta:
+        attrs: **metadata
+
+
+    Clés réservées dans metadata:
+    - VERSION
+    """
+    ax_names, ax_values = _check_ax_args(ax_names, ax_values)
+    print(filename)
+    f = h5py.File(filename, "w")
+    # meta
+    f.create_group("meta")
+    metadata["VERSION"] = 0.1
+    h5_dump_dict(f["meta"], **metadata)
+    # data
+    f.create_group("data")
+    data_grp = f["data"]
+    data_grp.attrs["sweeped_ax_names"] = ax_names
+    data_grp.attrs["result_data_names"] = out_names
+    for idx, (ax, name) in enumerate(zip(ax_values, ax_names)):
+        dset = data_grp.create_dataset(name, data=ax)
+        dset.attrs["ax_no"] = idx
+    for name in out_names:
+        data_grp.create_dataset(
+            name,
+            shape=map(len, ax_values),
+            dtype="f",
+            fillvalue=None,
+        )
+    
+    f.flush()
+
+    return f
 
 
 if __name__ == "__main__":
