@@ -40,14 +40,65 @@ class Sweep:
     element: str
     stickysteps: List[int]
 
-def make_sweep(start, stop, nbpts, element):
-    points = np.linspace(start, stop, nbpts)
-    step = (stop-start)/nbpts
-    stickysteps = np.ones(nbpts, dtype=int)*step
-    stickysteps[0] = start
-    return Sweep(start, stop, step, nbpts, points, element, stickysteps)
+    @staticmethod
+    def _make_stickysteps(start, nbpts, step, element=''):
+        stickysteps = np.ones(nbpts, dtype=int)*step
+        stickysteps[0] = start
+        if step < .155e-3:
+            print(f"Step {step} probably too low for {element} axis")
+        return stickysteps
+
+    @staticmethod
+    def from_nbpts(start, stop, nbpts, element):
+        points = np.linspace(start, stop, nbpts)
+        step = (stop-start)/nbpts
+        stickysteps = Sweep._make_stickysteps(start, nbpts, step, element)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps)
+
+    @staticmethod
+    def from_step(start, stop, step, element):
+        points = np.arange(start, stop, step)
+        nbpts = len(points)
+        stickysteps = Sweep._make_stickysteps(start, nbpts, step, element)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps)
 
 class VideoModeWindow(QMainWindow):
+
+    @staticmethod
+    def from_job(job, long_axis, short_axis, out_name):
+        """
+        Make a window from an opx qua job.
+        Generate a function for getting out_name in job.results_handle
+        The result must be a 2d array.
+        Job is must have a pause().
+        """
+        def get_map(job):
+            # Play opx
+            # Wait for pause
+            # Get result
+            job.resume()
+            while not job.is_paused():
+                sleep(0.001)
+            try:
+                res = job.result_handles.get(out_name).fetch_all()
+            except KeyError:
+                # For some reason the first run usually raises this
+                # We retry:
+                return get_map(job)
+            return res
+
+        return VideoModeWindow(
+            dim = 2,
+            fn_get = lambda: get_map(job),
+            xlabel = long_axis.element,
+            ylabel = short_axis.element,
+            axes_dict = {
+                "x": [long_axis.start, long_axis.stop],
+                "y": [short_axis.start, short_axis.stop],
+            },
+            win_title = f"vm {out_name}",
+        )
+
     def __init__(
         self,
         fn_get: Callable[..., Any] | None = None,
@@ -71,7 +122,8 @@ class VideoModeWindow(QMainWindow):
         ysweep: "SweepAxis|None" = None,
         xsweep: "SweepAxis|None" = None,
         window_size: Literal[False, "wide", "wider"] = False,
-        make_app: bool = False,
+        make_app: bool = True,
+        win_title: str = "Video mode",
     ):
         """
         Opens a window and start a thread that exec and show `fn_get`.
@@ -171,7 +223,7 @@ class VideoModeWindow(QMainWindow):
         self.pause_at_max_avg = False
 
         # UI
-        self.setWindowTitle("Video mode")
+        self.setWindowTitle(win_title)
 
         splitter = QSplitter()
         self.graph: pg.PlotWidget = pg.PlotWidget()
@@ -442,6 +494,12 @@ class VideoModeWindow(QMainWindow):
             return
         clipboard = self.app.clipboard()
         exp = pg.exporters.ImageExporter(self.graph.scene())
+        p = exp.parameters()
+        p["antialias"] = False
+        #p['width'] = 1000
+        #p['height'] = 1000
+        from PyQt5.QtGui import QColor
+        p['background'] = QColor(255,255,255)
         exp.export(copy=True)
         clipboard.setImage(exp.png)
 
