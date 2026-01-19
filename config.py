@@ -162,7 +162,7 @@ config = {
     },
     "waveforms": {
         "zero_wf": {"type": "constant", "sample": 0.0},
-        "cst_wf": {"type": "constant", "sample": 0.1},
+        "cst_wf": {"type": "constant", "sample": 1.0},
         "test_wf": {"type": "arbitrary", "samples": flattop_cosine}
     },
     "digital_waveforms": {
