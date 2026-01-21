@@ -24,12 +24,16 @@ from PyQt5.QtWidgets import (
     QSplitter,
     QWidget,
 )
-
+from . import PasteDialog
 from . import tools
 
 
 # from Utils import files as uf
 from .ScientificSpinBox import PyScientificSpinBox
+
+def interlace_array(array):
+    array[::2] = array[::2][::-1]
+    return array
 
 @dataclass
 class Sweep:
@@ -40,28 +44,42 @@ class Sweep:
     points: List[int]
     element: str
     stickysteps: List[int]
+    is_interlaced: bool
 
     @staticmethod
-    def _make_stickysteps(start, nbpts, step, element=''):
-        stickysteps = np.ones(nbpts, dtype=int)*step
-        stickysteps[0] = start
-        if step < .155e-3:
-            print(f"Step {step} probably too low for {element} axis")
+    def _make_stickysteps(points, element=''):
+        stickysteps = np.empty_like(points)
+        stickysteps[1:] = np.diff(points)
+        stickysteps[0] = points[0]
+        min_step = np.min(stickysteps[1:])
+        if abs(min_step) < .155e-3:
+            print(f"step {min_step} probably too low for {element} axis in direct mode")
+        if abs(min_step) < 0.78e-3:
+            print(f"step {min_step} probably too low for {element} axis in amplified mode")
         return stickysteps
 
     @staticmethod
-    def from_nbpts(start, stop, nbpts, element):
+    def from_nbpts(start, stop, nbpts, element, attenuation_db=0, interlace=False):
+        gain = 10**(attenuation_db/20)
+        start, stop = start*gain, stop*gain
         points = np.linspace(start, stop, nbpts)
         step = (stop-start)/nbpts
-        stickysteps = Sweep._make_stickysteps(start, nbpts, step, element)
-        return Sweep(start, stop, step, nbpts, points, element, stickysteps)
+
+        if interlace: points = interlace_array(points)
+        stickysteps = Sweep._make_stickysteps(points, element)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps, interlace)
 
     @staticmethod
-    def from_step(start, stop, step, element):
+    def from_step(start, stop, step, element, attenuation_db=0, interlace=False):
+        gain = 10**(attenuation_db/20)
+        start, stop = start*gain, stop*gain
+        step = step if stop > start else -step
         points = np.arange(start, stop, step)
         nbpts = len(points)
-        stickysteps = Sweep._make_stickysteps(start, nbpts, step, element)
-        return Sweep(start, stop, step, nbpts, points, element, stickysteps)
+
+        if interlace: points = interlace_array(points)
+        stickysteps = Sweep._make_stickysteps(points, element)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps, interlace)
 
 class VideoModeWindow(QMainWindow):
 
@@ -84,6 +102,7 @@ class VideoModeWindow(QMainWindow):
             # Wait for pause
             # Get result
             handle = job.result_handles.get(out_name)
+            if handle is None: raise KeyError(f"{out_name} probably not right")
             job.resume()
             while not job.is_paused() and len(handle) != 0:
                 sleep(0.001)
@@ -91,17 +110,33 @@ class VideoModeWindow(QMainWindow):
                 res = handle.fetch_all()
             except KeyError:
                 return get_map(job)
+
+            if short_axis.is_interlaced:
+                res = interlace_array(res.T).T
+            if short_axis.step < 0:
+                res = res.T[::-1].T
+            if long_axis.is_interlaced:
+                res = interlace_array(res)
+            if long_axis.step < 0:
+                res = res[::-1]
+            
             return res
 
         def saveto(data_2d):
             filename = save_path+"%T_"+out_name+".hdf5"
             filename = expand_filename(filename)
+
+            dialog = PasteDialog.PasteDialog()
+            dialog.exec_()
+
             with sweep_file(
                 filename,
                 [long_axis.element, short_axis.element],
                 [long_axis.points, short_axis.points],
                 [out_name],
+                config=dialog.getText()
             ) as file:
+
                 file["data"][out_name][...] = data_2d.T
                 print(data_2d.shape)
 
@@ -145,7 +180,7 @@ class VideoModeWindow(QMainWindow):
         ysweep: "SweepAxis|None" = None,
         xsweep: "SweepAxis|None" = None,
         window_size: Literal[False, "wide", "wider"] = False,
-        make_app: bool = True,
+        make_app: bool = False,
         win_title: str = "Video mode",
         saveto_function = None,
     ):
@@ -256,6 +291,10 @@ class VideoModeWindow(QMainWindow):
 
         self.curve: pg.PlotDataItem = self.graph.plot()
         self.image: pg.ImageItem = pg.ImageItem()
+        # if dim == 2:
+        #self.cb = pg.ColorBarItem()
+        #self.cb.setImageItem(self.image)
+        #self.graph.addItem(self.cb)
         self.cm: pg.ColorMap = pg.colormap.get("viridis")
         self.image.setColorMap(self.cm)
         self.graph.addItem(self.image)
@@ -558,6 +597,8 @@ class VideoModeWindow(QMainWindow):
 
     #     uf.saveToNpz(path, filename, to_save, make_date_folder=False, metadata=meta)
 
+    # def __del__(self):
+        # self.pause()
 
 from typing import Generic, TypeVar
 
