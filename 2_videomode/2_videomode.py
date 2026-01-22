@@ -238,7 +238,8 @@ def sweep_file(
     """
     ax_names, ax_values = _check_ax_args(ax_names, ax_values)
 
-    f = h5py.File(filename, "w")
+    f = h5py.File(filename, "w", libver="latest")
+    f.swmr_mode = True
     # meta
     f.create_group("meta")
     metadata["VERSION"] = 0.1
@@ -256,7 +257,7 @@ def sweep_file(
             name,
             shape=map(len, reversed(ax_values)),
             dtype="f",
-            fillvalue=None,
+            fillvalue=np.nan,
         )
     
     setattr(f, "memory_dict", {})
@@ -275,7 +276,7 @@ def sweep_file(
 from config import qop_ip, cluster_name, u, config, cw_len
 from videomode_lib.videomode import VideoModeWindow, Sweep
 
-short_axis = Sweep.from_nbpts(-20e-3, 20e-3, 31, "P1", 21, interlace=1)
+short_axis = Sweep.from_nbpts(-20e-3, 20e-3, 31, "P1", 21, interlace=0)
 long_axis = Sweep.from_nbpts(-10e-3, 10e-3, 8, "P2", 21, interlace=0)
 
 cw_readout_freq = 300 * u.MHz

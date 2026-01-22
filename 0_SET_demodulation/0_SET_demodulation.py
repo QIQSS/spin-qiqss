@@ -50,6 +50,7 @@ from qm.qua import (
     update_frequency,
     play, pause, amp, 
     ramp_to_zero, ramp,
+    reset_phase
 )
 from qm import QuantumMachinesManager, SimulationConfig
 from qm.qua.lib import Math as mth
@@ -233,7 +234,8 @@ def sweep_file(
     """
     ax_names, ax_values = _check_ax_args(ax_names, ax_values)
 
-    f = h5py.File(filename, "w")
+    f = h5py.File(filename, "w", libver="latest")
+    f.swmr_mode = True
     # meta
     f.create_group("meta")
     metadata["VERSION"] = 0.1
@@ -251,7 +253,7 @@ def sweep_file(
             name,
             shape=map(len, reversed(ax_values)),
             dtype="f",
-            fillvalue=None,
+            fillvalue=np.nan,
         )
     
     setattr(f, "memory_dict", {})

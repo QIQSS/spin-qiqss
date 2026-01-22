@@ -291,12 +291,10 @@ class VideoModeWindow(QMainWindow):
 
         self.curve: pg.PlotDataItem = self.graph.plot()
         self.image: pg.ImageItem = pg.ImageItem()
-        # if dim == 2:
-        #self.cb = pg.ColorBarItem()
-        #self.cb.setImageItem(self.image)
-        #self.graph.addItem(self.cb)
-        self.cm: pg.ColorMap = pg.colormap.get("viridis")
-        self.image.setColorMap(self.cm)
+        if dim == 2:
+            self.cb = self.graph.addColorBar(self.image, colorMap="viridis", interactive=True)
+        #self.cm: pg.ColorMap = pg.colormap.get("viridis")
+        #self.image.setColorMap(self.cm)
         self.graph.addItem(self.image)
 
         self.left = QWidget()
