@@ -28,6 +28,12 @@ from . import PasteDialog
 from . import tools
 
 
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+
+
 # from Utils import files as uf
 from .ScientificSpinBox import PyScientificSpinBox
 
@@ -45,6 +51,8 @@ class Sweep:
     element: str
     stickysteps: List[int]
     is_interlaced: bool
+    orig_start: float
+    orig_stop: float
 
     @staticmethod
     def _make_stickysteps(points, element=''):
@@ -60,6 +68,7 @@ class Sweep:
 
     @staticmethod
     def from_nbpts(start, stop, nbpts, element, attenuation_db=0, interlace=False):
+        orig_start, orig_stop = start, stop
         gain = 10**(attenuation_db/20)
         start, stop = start*gain, stop*gain
         points = np.linspace(start, stop, nbpts)
@@ -67,10 +76,11 @@ class Sweep:
 
         if interlace: points = interlace_array(points)
         stickysteps = Sweep._make_stickysteps(points, element)
-        return Sweep(start, stop, step, nbpts, points, element, stickysteps, interlace)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps, interlace, orig_start, orig_stop)
 
     @staticmethod
     def from_step(start, stop, step, element, attenuation_db=0, interlace=False):
+        orig_start, orig_stop = start, stop
         gain = 10**(attenuation_db/20)
         start, stop = start*gain, stop*gain
         step = step if stop > start else -step
@@ -79,7 +89,7 @@ class Sweep:
 
         if interlace: points = interlace_array(points)
         stickysteps = Sweep._make_stickysteps(points, element)
-        return Sweep(start, stop, step, nbpts, points, element, stickysteps, interlace)
+        return Sweep(start, stop, step, nbpts, points, element, stickysteps, interlace, orig_start, orig_stop)
 
 class VideoModeWindow(QMainWindow):
 
@@ -113,12 +123,12 @@ class VideoModeWindow(QMainWindow):
 
             if short_axis.is_interlaced:
                 res = interlace_array(res.T).T
-            if short_axis.step < 0:
-                res = res.T[::-1].T
+            #if short_axis.step < 0:
+            #    res = res.T[::-1].T
             if long_axis.is_interlaced:
                 res = interlace_array(res)
-            if long_axis.step < 0:
-                res = res[::-1]
+            # if long_axis.step < 0:
+            #     res = res[::-1]
             
             return res
 
@@ -132,9 +142,12 @@ class VideoModeWindow(QMainWindow):
             with sweep_file(
                 filename,
                 [long_axis.element, short_axis.element],
-                [long_axis.points, short_axis.points],
+                list(map(lambda ax: np.linspace(ax.orig_start, ax.orig_stop, ax.nbpts), [long_axis, short_axis]))
+                #[long_axis.points, short_axis.points],
                 [out_name],
-                config=dialog.getText()
+                config=dialog.getText(),
+                long_axis=long_axis, 
+                short_axis=short_axis,
             ) as file:
 
                 file["data"][out_name][...] = data_2d.T
@@ -149,8 +162,8 @@ class VideoModeWindow(QMainWindow):
             xlabel = long_axis.element,
             ylabel = short_axis.element,
             axes_dict = {
-                "x": [long_axis.start, long_axis.stop],
-                "y": [short_axis.start, short_axis.stop],
+                "x": [long_axis.orig_start, long_axis.orig_stop],
+                "y": [short_axis.orig_start, short_axis.orig_stop],
             },
             win_title = f"vm {out_name}",
             saveto_function = saveto if save_path is not None else None,
@@ -272,7 +285,7 @@ class VideoModeWindow(QMainWindow):
             return np.random.rand(100)
 
         def get_fn_2d_example():
-            return np.random.rand(10, 10)
+            return 10*np.random.rand(10, 10)
 
         if fn_get is None:
             fn_get = [get_fn_1d_example, get_fn_2d_example][dim - 1]
@@ -360,6 +373,7 @@ class VideoModeWindow(QMainWindow):
 
         if show:
             self.show()
+            self.raise_()
         if play:
             self.play()
 
@@ -491,6 +505,7 @@ class VideoModeWindow(QMainWindow):
             self.x_coord[1] - self.x_coord[0],
             self.y_coord[1] - self.y_coord[0],
         )  # x,y,w,h
+        self.cb.setImageItem(self.image)
 
     def continousGet(
         self,
