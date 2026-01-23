@@ -2,7 +2,7 @@ import time
 import traceback
 from time import sleep
 from typing import Any, Callable, Dict, List
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import os 
 
 import numpy as np
@@ -142,16 +142,12 @@ class VideoModeWindow(QMainWindow):
             with sweep_file(
                 filename,
                 [long_axis.element, short_axis.element],
-                list(map(lambda ax: np.linspace(ax.orig_start, ax.orig_stop, ax.nbpts), [long_axis, short_axis]))
+                list(map(lambda ax: np.linspace(ax.orig_start, ax.orig_stop, ax.nbpts), [long_axis, short_axis])),
                 #[long_axis.points, short_axis.points],
                 [out_name],
                 config=dialog.getText(),
-                long_axis=long_axis, 
-                short_axis=short_axis,
             ) as file:
-
                 file["data"][out_name][...] = data_2d.T
-                print(data_2d.shape)
 
                 file.flush()
             print(f"Vm data saved: {filename}")
@@ -306,8 +302,7 @@ class VideoModeWindow(QMainWindow):
         self.image: pg.ImageItem = pg.ImageItem()
         if dim == 2:
             self.cb = self.graph.addColorBar(self.image, colorMap="viridis", interactive=True)
-        #self.cm: pg.ColorMap = pg.colormap.get("viridis")
-        #self.image.setColorMap(self.cm)
+            self.cb.setImageItem(self.image)
         self.graph.addItem(self.image)
 
         self.left = QWidget()
@@ -498,14 +493,14 @@ class VideoModeWindow(QMainWindow):
 
     def imgplot(self, data_2d: Sequence[Any], store_in_buffer: bool = True) -> None:
         data_2d = self._doAvg(data_2d, store_in_buffer)
-        self.image.setImage(data_2d)
+        self.image.setImage(data_2d, autLevels=True)
         self.image.setRect(
             self.x_coord[0],
             self.y_coord[0],
             self.x_coord[1] - self.x_coord[0],
             self.y_coord[1] - self.y_coord[0],
         )  # x,y,w,h
-        self.cb.setImageItem(self.image)
+        self.cb.setLevels(self.image.quickMinMax())
 
     def continousGet(
         self,
@@ -575,9 +570,7 @@ class VideoModeWindow(QMainWindow):
         self.btnPlay.setDisabled(True)
 
     def copyToClipboard(self):
-        if not self.app:
-            return
-        clipboard = self.app.clipboard()
+        clipboard = QApplication.clipboard()
         exp = pg.exporters.ImageExporter(self.graph.scene())
         p = exp.parameters()
         p["antialias"] = False
@@ -721,10 +714,20 @@ def h5_dump_dict(grp:h5py.File, **dict_):
     for key, val in dict_.items():
         try:
             grp.attrs[key] = val
-        except:
-            grp.attrs[key] = json.dumps(val, indent=2)
+        except Exception as e:
+            print(f"[attrs direct] key={key!r}, error={e}")
 
-    grp.file.flush() # Note: File.file is file so this work even if grp is a File
+        try:
+            grp.attrs[key] = json.dumps(val, indent=2)
+        except Exception as e:
+            print(f"[json dumps] key={key!r}, error={e}")
+
+        try:
+            grp.attrs[key] = str(val)
+        except Exception as e:
+            raise TypeError(f"Could not dump {dict_}") from e
+
+        grp.file.flush() # Note: File.file is file so this work even if grp is a File
 
 def _check_ax_args(ax_names, ax_values):
     if ax_names != []:
@@ -789,7 +792,7 @@ def sweep_file(
             name,
             shape=map(len, ax_values),
             dtype="f",
-            fillvalue=None,
+            fillvalue=np.nan,
         )
     
     f.flush()

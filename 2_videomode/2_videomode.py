@@ -295,6 +295,8 @@ with program() as videomode:
     t_st = declare_stream() # Theta
     adc_st = declare_stream(adc_trace=True)
     with while_(True):
+        ramp_to_zero(short_axis.element)
+        ramp_to_zero(long_axis.element)
         pause()
         with for_each_(n, long_axis.stickysteps):
             play("step"*amp(n), long_axis.element, duration=long_duration*u.ns)
