@@ -25,7 +25,6 @@ import h5py
 import sys
 sys.path.append("..")
 
-
 # Functions for OPX use
 from qm.qua import (
     program,
@@ -69,8 +68,8 @@ path = make_path_fn(data_path)
 # %%
 from config import qop_ip, cluster_name, u, config
 
-frequencies = np.arange(0e6, 1000e6+1, .01e6)
-cw_amp = 1
+frequencies = np.arange(150e6, 1000e6+1, .01e6)
+cw_amp = 1.50e-3
 
 with program() as sweep_rf:
 
@@ -120,9 +119,11 @@ with sweep_file(
 # %%
 with h5py.File(filename, 'r') as f:
     ax_names = f["data"].attrs["sweeped_ax_names"]
+    out_names = f["data"].attrs["result_data_names"]
+    print(ax_names, out_names)
 
     # chargement
-    x = f["data"][ax_names[0]][:]
+    x = f["data"]["frequence (Hz)"][:]
     r = f["data"]["R"][:]
     t = f["data"]["Theta"][:]
     ###

@@ -26,7 +26,6 @@ def expand_filename(filename) -> str:
 def get_cell_content(cell_number=-1):
     return get_ipython().user_ns['In'][cell_number]
 
-
 def h5_dump_dict(grp:h5py.File, **dict_) -> None:
     """
     Ajoute des dict en tant qu'attributs dans le group "grp" d'un fichier.
@@ -40,7 +39,9 @@ def h5_dump_dict(grp:h5py.File, **dict_) -> None:
     for key, val in dict_.items():
         try:
             grp.attrs[key] = val
-        except:
+        except TypeError as e:
+            print(e)
+            print(f"Saving  {key} as json")
             grp.attrs[key] = json.dumps(val, indent=2)
 
     grp.file.flush() # Note: File.file is file so this work even if grp is a File
@@ -94,7 +95,7 @@ def _flush_from_res_handles(file, res_handles, print_progress=True):
     if print_progress:     
         name_0, data_0 = out_names[0], file["data"][out_names[0]][:]
 
-        total_points = len(data_0.T[0])
+        total_points = data_0.shape[0]
         current_point = file.memory_dict.get(name_0, 0)
         
         print(f"Avancement: {current_point}/{total_points}     ", end="\r")
