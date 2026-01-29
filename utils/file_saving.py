@@ -7,6 +7,8 @@ import numpy as np
 
 from typing import Callable
 
+import matplotlib.pyplot as plt
+
 def make_path_fn(data_path) -> Callable[[], str]:
 
     def path_fn():
@@ -41,7 +43,7 @@ def h5_dump_dict(grp:h5py.File, **dict_) -> None:
             grp.attrs[key] = val
         except TypeError as e:
             print(e)
-            print(f"Saving  {key} as json")
+            print(f"Saving {key} as json")
             grp.attrs[key] = json.dumps(val, indent=2)
 
     grp.file.flush() # Note: File.file is file so this work even if grp is a File
@@ -50,8 +52,12 @@ def _check_ax_args(ax_names, ax_values):
     """
     S'assure que les longueurs correspondent
     Génère les noms si ax_names est la liste vide.
+    Génère un arange(0, val, 1) si un des ax_value est un entier
     """
     if ax_names != []:
+        for i, ax_value in enumerate(ax_values):
+            if isinstance(ax_value, int):
+                ax_values[i] = np.arange(0, ax_value, 1)
         if len(ax_values) != len(ax_names):
             raise(ValueError, f"axs (size {len(ax_values)}) and ax_names (size {len(ax_names)}) must be of same length.")
     else:
@@ -59,7 +65,7 @@ def _check_ax_args(ax_names, ax_values):
     return ax_names, ax_values
 
 
-def _flush_from_res_handles(file, res_handles, print_progress=True):
+def _flush_from_res_handles(file, res_handles, print_progress=True) -> bool:
     """
     Flush des données d'un job qua en cours vers le fichier
     Parcours les variables
@@ -90,6 +96,8 @@ def _flush_from_res_handles(file, res_handles, print_progress=True):
             slc = slice(last_n, n_available)
             new_data = handle.fetch(slc)["value"]
             memory_dict[out_name] = n_available
+            assert file["data"][out_name][slc].shape == new_data.shape, \
+            "Problème de tailles. Dans le programme qua, on doit avoir stream.buffer().save_all() pour d=2, stream.save_all() pour d=1"
             file["data"][out_name][slc] = new_data
 
     if print_progress:     
@@ -115,6 +123,8 @@ def sweep_file(
 ) -> h5py.File:
     """ 
     Crée et retourne le fichier hdf5.
+    - ax_names: nom des axes de sweep
+    - ax_values: vecteurs de valeurs des axe. Peut aussi être un int pour dire: np.arrange(0, int, 1)
     - out_names: nom des variables de res_handles à sauvegarder.
     - définie une fonction `flush_data(res_handles)` pour ajouter les nouvelles données disponibles.
 

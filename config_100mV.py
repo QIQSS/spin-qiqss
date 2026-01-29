@@ -1,4 +1,3 @@
-import numpy as np
 from qualang_tools.units import unit
 from qualang_tools.config.waveform_tools import flattop_cosine_waveform
 
@@ -13,17 +12,20 @@ con = "con1"
 lf_num = 1
 
 RF_SET1_port = 8
-P1_port = 1
-P2_port = 4
+B2_port = 1
+P2_port = 2
+P3_port = 4
 
 sampling_rate_gate = int(1e9)  # or, int(1e9)
 sampling_rate_rf = int(2e9)
 u = unit(coerce_to_integer=True)
 
 # Time of flight
-time_of_flight = 164
+time_of_flight = 540
 
-cw_len = 5_000
+cw_len = 150_000
+cw_len_continuous = 10*cw_len
+
 flattop_cosine = flattop_cosine_waveform(1, 500, 100) # 100 + 500 + 100
 
 
@@ -39,26 +41,34 @@ config = {
                     "type": "LF",
                     "analog_outputs": {
                         RF_SET1_port: {
-                            "offset": 0.068,  # Amplified +- 2.5
+                            "offset": 0.0677,
                             "sampling_rate": sampling_rate_rf,
                             "output_mode": "amplified",
                         },
-                        P1_port: {
-                            # "offset": 0.008,  # Direct +- .5
-                            "offset": 0.045,  # Amplified
+                        P2_port: {
+                            # "offset": 0.0436,  # amplified
+                            "offset": 0.0075,
                             "sampling_rate": sampling_rate_gate,
-                            "output_mode": "amplified",
+                            "output_mode": "direct",
                             "filter": {
                                 #"exponential": [(100, 180_000_000)],
                             },
                         },
-                        P2_port: {
-                            # "offset": 0.001,  # Direct
-                            "offset": 0.017,  # Amplified
+                        P3_port: {
+                            # "offset": 0.0166,  # amplified
+                            "offset": 0.0015,
+                            "sampling_rate": sampling_rate_gate,
+                            "output_mode": "direct",
+                            "filter": {
+                                #"exponential": [(100, 180_000_000)],
+                            },
+                        },
+                        B2_port: {
+                            "offset": 0.0,
                             "sampling_rate": sampling_rate_gate,
                             "output_mode": "amplified",
                             "filter": {
-                                "exponential": [(100, 17703)],
+                                #"exponential": [(100, 180_000_000)],
                             },
                         },
                     },
@@ -75,9 +85,7 @@ config = {
                         }, 
                     },
                     "digital_outputs": {
-                        1: {
-                            "inverted": True
-                        },
+                        1: {},
                     },
                 },
             },
@@ -93,14 +101,15 @@ config = {
                 "out2": (con, lf_num, 2)
             },
             "time_of_flight": time_of_flight,
-            "intermediate_frequency": 5e5,
+            "intermediate_frequency": 322.4e6,
             "operations": {
                 "readout": "meas_pulse",
+                "readout_continuous": "meas_pulse_continuous",
             }
         },
-        "P1": {
+        "P2": {
             "singleInput": {
-                "port": (con, lf_num, P1_port)
+                "port": (con, lf_num, P2_port)
             },
             "intermediate_frequency": 0,
             "operations": {
@@ -111,9 +120,22 @@ config = {
                 "duration": 1000 # ramp to zero duration
             }
         },
-        "P2": {
+        "P3": {
             "singleInput": {
-                "port": (con, lf_num, P2_port)
+                "port": (con, lf_num, P3_port)
+            },
+            "intermediate_frequency": 0,
+            "operations": {
+                "step": "control_pulse",
+            },
+            "sticky": {
+                "analog": True,
+                "duration": 1000 # ramp to zero duration
+            }
+        },
+        "B2": {
+            "singleInput": {
+                "port": (con, lf_num, B2_port)
             },
             "intermediate_frequency": 0,
             "operations": {
@@ -131,8 +153,8 @@ config = {
             "digitalInputs": {
                 "trig": {
                     "port": (con, lf_num, 1),
-                    "delay": 2*cw_len,
-                    "buffer": 100,
+                    "delay": 0,
+                    "buffer": 0,
                 },
             },
             "time_of_flight": time_of_flight,
@@ -155,6 +177,18 @@ config = {
                 "sin": "sine_weights",
             },
         },
+        "meas_pulse_continuous": {
+            "operation": "measurement",
+            "length": cw_len_continuous,
+            "waveforms": {
+                "single": "cst_wf",
+            },
+            "digital_marker": "ON",
+            "integration_weights": {
+                "cos": "cosine_weights_continuous",
+                "sin": "sine_weights_continuous",
+            },
+        },
         "control_pulse": {
             "operation": "control",
             "length": cw_len,
@@ -171,8 +205,8 @@ config = {
     },
     "waveforms": {
         "zero_wf": {"type": "constant", "sample": 0.0},
-        "cst_wf": {"type": "constant", "sample": 1.0},
-        "test_wf": {"type": "arbitrary", "samples": flattop_cosine}
+        "cst_wf": {"type": "constant", "sample": 0.1},
+        #"test_wf": {"type": "arbitrary", "samples": flattop_cosine}
     },
     "digital_waveforms": {
         "ON": {"samples": [(1, 0)]},
@@ -186,6 +220,14 @@ config = {
         "sine_weights": {
             "cosine": [(0.0, cw_len)],
             "sine": [(1.0, cw_len)],
+        },
+        "cosine_weights_continuous": {
+            "cosine": [(1.0, cw_len_continuous)],
+            "sine": [(0.0, cw_len_continuous)],
+        },
+        "sine_weights_continuous": {
+            "cosine": [(0.0, cw_len_continuous)],
+            "sine": [(1.0, cw_len_continuous)],
         },
     },
 }

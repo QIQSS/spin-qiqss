@@ -90,7 +90,7 @@ cw_readout_freq = 300 * u.MHz
 cw_amp = 0.5
 
 cw_readout_len = cw_len
-before_wait = 1000 * u.ns
+before_wait = 100 * u.ns
 short_duration = cw_readout_len + before_wait
 long_duration = short_duration * short_axis.nbpts
 

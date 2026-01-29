@@ -99,3 +99,7 @@ print(f"Temps de vol: {tof_calculated} ns")
 plt.plot(tm, trace)
 plt.axvline(tm[0] + tof_calculated - time_of_flight)
 plt.show()
+
+# %%
+plt.plot(tm, trace)
+plt.show()

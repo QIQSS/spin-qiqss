@@ -111,7 +111,7 @@ with sweep_file(
 ) as f:
 
     while not f.flush_data(job.result_handles):
-        sleep(2)
+        sleep(.1)
 
 # %% [markdown]
 # Affichage
