@@ -61,7 +61,7 @@ from utils.file_saving import (
 path = make_path_fn(data_path)
 
 # %%
-from config import qop_ip, cluster_name, u, config, time_of_flight
+from config_100mV import qop_ip, cluster_name, u, config, time_of_flight
 
 cw_amp = 1.50e-3
 
@@ -70,7 +70,7 @@ with program() as tof:
     reset_global_phase()
     update_frequency("RF-SET1", 322.4e6)
 
-    measure("readout"*amp(cw_amp), "RF-SET1", adc_stream=adc_st)
+    measure("readout"*amp(cw_amp*10), "RF-SET1", adc_stream=adc_st)
 
     with stream_processing():
         adc_st.input1().save_all("trace")
