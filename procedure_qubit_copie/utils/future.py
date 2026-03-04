@@ -121,6 +121,12 @@ class DistributionSTParams(NamedTuple):
         )
         return dis_singlet, dis_triplet
 
+    def get_visibility(self, x, threshold):
+        fid_sin = fidelity_singlet(threshold, self.mus, self.sigma)
+        fid_tri = fidelity_triplet(threshold, self.tm_over_T1, self.mus, self.mut, self.sigma)
+        vis = fid_sin + fid_tri - 1
+        return fid_sin, fid_tri, vis
+
     def find_optimal_threshold(self, x):
         func = lambda x: (lambda s, t: s - t)(*self.get_distributions(x))
         threshold = root_scalar_safe(func, bracket=[self.mus-self.sigma, self.mut+self.sigma], method="brentq")
@@ -214,10 +220,7 @@ def fit_distribution_ST(x_values, histogram, p0=None, find_threshold=False, comp
     
     # Calculer la visibilité
     if compute_visibility and results.threshold is not None:
-        fid_sin = fidelity_singlet(results.threshold, popt.mus, popt.sigma)
-        fid_tri = fidelity_triplet(results.threshold, popt.tm_over_T1, popt.mus, popt.mut, popt.sigma)
-        vis = fid_sin + fid_tri - 1
-
+        fid_sin, fid_tri, vis = results.popt.get_visibility(x_values, results.threshold)
         results.singlet_fidelity = fid_sin
         results.triplet_fidelity = fid_tri
         results.visibility = vis

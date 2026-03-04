@@ -160,7 +160,7 @@ vm = VideoModeWindow.from_job(
 # )
 
 # %% [markdown]
-# # Trouver le point de readout
+# # Balayage du detuning: trouver le point de readout
 
 # %% [markdown]
 # ## Code de mesure
@@ -301,7 +301,7 @@ plt.ylabel("Count")
 # ### Trouver le point de détuning optimal
 
 # %%
-detuning_idx = 10
+detuning_idx = 130
 
 hist_vs_detuning = np.apply_along_axis(
     lambda arr: np.histogram(arr, bins_i)[0],
@@ -309,7 +309,7 @@ hist_vs_detuning = np.apply_along_axis(
 )
 
 plt.figure(figsize=(6, 4))
-plt.title("Loading point: (P2, P3)=(-2mV, 2mV)")
+plt.title("Loading point: (P2, P3)")
 plt.imshow(hist_vs_detuning, extent=[0, n_detuning, *bins_i[[0, -1]]], interpolation="none", aspect="auto", origin="lower")
 plt.xlabel("Detuning index")
 plt.ylabel("Histogram I")
@@ -318,11 +318,9 @@ plt.tight_layout()
 # plt.savefig("Readout_displacement_2mV.png", dpi=1200)
 
 if detuning_idx:
-    #plt.axvline(detuning_idx, c="red", ls=":")
-    plt.text(0.5, 0.9, f"Temps d'intégration: {cw_len*1e-3}us", c="white", horizontalalignment='center',
-     verticalalignment='center', transform=plt.gca().transAxes, fontsize=12)
+    plt.axvline(detuning_idx, c="red", ls=":")
+    #plt.text(0.5, 0.9, f"Temps d'intégration: {cw_len*1e-3}us", c="white", horizontalalignment='center', verticalalignment='center', transform=plt.gca().transAxes, fontsize=12)
     print(f"Couple de détuning: (P2, P3) = ({round(p2_list[detuning_idx], 5)}, {round(p3_list[detuning_idx], 5)})")
-    plt.savefig(rf"R:\Student\Alexis\mesures\2026-03-04-splitting_vs_temps_int\{int(cw_len*1e-3)}us_{n_avg}moy.svg",)
 
     plt.figure()
     plt.plot(bins_ic, hist_vs_detuning[:, detuning_idx])
@@ -330,7 +328,7 @@ if detuning_idx:
     plt.ylabel("Histogram I count")
 
 # %% [markdown]
-# # Trouver le temps de readout
+# # Balayage du temps de mesure: trouver le temps optimal
 
 # %% [markdown]
 # ## Code de mesure
@@ -343,10 +341,10 @@ from params import *
 import params as params_file
 
 # Paramètres
-n_slices = 100
+n_slices = 1_000
 n_cores = 2
 n_avg = 100_000
-
+print(f"total readout time {n_slices*cw_len_short}")
 
 ############################
 # Démodulation sliced
@@ -369,10 +367,12 @@ with program() as psb_readout_time:
     with for_(n, 0, n<n_avg, n+1):
         for rf in rf_sets:
             reset_if_phase(rf)
+
         sequence.add_step(voltage_point_name="init")
-        sequence.add_step(voltage_point_name="load")
+        sequence.add_step(voltage_point_name="zero_dc", duration=16)
+        sequence.add_step(voltage_point_name="load", ramp_duration=10_000)
         align(*rf_sets, *gates)
-        
+
         sequence.add_step(voltage_point_name="readout", duration=n_slices * cw_len_short)
         i, q = readout_demod_sliced_macro(
             element="RF-SET1",
@@ -421,7 +421,7 @@ with sweep_file(
 moving_integration_width_us = 50
 
 first_idx = 3
-n_bins = 400
+n_bins = 500
 
 # Chargement des données
 with h5py.File(filename, 'r') as file:
@@ -450,14 +450,10 @@ bins_mov_center = (bins_mov[1:] + bins_mov[:-1]) / 2
 
 # Calcul des histogrammes en fonction du temps de readout
 hist_cum_vs_time = np.apply_along_axis(
-    lambda arr: np.histogram(arr, bins_cum)[0],
-    0, data_cum
-)
+    lambda arr: np.histogram(arr, bins_cum)[0], 0, data_cum)
 
 hist_mov_vs_time = np.apply_along_axis(
-    lambda arr: np.histogram(arr, bins_mov)[0],
-    0, data_mov
-)
+    lambda arr: np.histogram(arr, bins_mov)[0], 0, data_mov)
 
 # %% [markdown]
 # ### Trouver le temps d'intégration optimal
@@ -482,7 +478,7 @@ cb = plt.colorbar(label="Count")
 
 # %%
 # %matplotlib inline
-default_time = 30e-6  # Temps d'intégration sur lequel se baser pour trouver les paramètres initiaux de fit
+default_time = 50e-6  # Temps d'intégration sur lequel se baser pour trouver les paramètres initiaux de fit
 default_time_idx = int(default_time // (dt * 1e-6))  # Index correspondant à ce temps d'intégration
 tranche = hist_cum_vs_time[:, default_time_idx]  # Tranche d'histogramme à ce temps d'intégration
 
@@ -507,16 +503,39 @@ print(f"Temps d'intégration optimal: {optimal_tm} us")
 print(f"Visibilité: {optimal_fit.visibility*100:.1f}%")
 print(f"Threshold: {optimal_fit.threshold} (u.a.)")
 
+
+# %%
 plt.figure(figsize=(6, 4))
-plt.plot(time_list, [fit.visibility  for fit in all_fits], label="Visibility")
-plt.scatter(time_list[optimal_tm_index], optimal_fit.visibility, marker="*", c="red", label="Optimal visibility")
+vis = [fit.visibility  for fit in all_fits]
+plt.plot(time_list, vis, label="Visibility")
+plt.scatter(time_list[optimal_tm_index], optimal_fit.visibility, marker="*", c="red", label=f"Optimal visibility: {optimal_fit.visibility*100:.1f}%")
+plt.axvline(time_list[optimal_tm_index], c="grey", zorder=-1, linestyle='--')
+plt.text(time_list[optimal_tm_index]*1.5, min(vis), f"${time_list[optimal_tm_index]}\mu s$", horizontalalignment="left")
 plt.xlabel("Integration time (us)")
 plt.ylabel("Visibility (%)")
 plt.legend()
+plt.xscale('log')
 plt.tight_layout()
 
+# %%
+# Graph de la fidélité en fonction du threshold, pour le meilleur temps d'intégration
+results = [optimal_fit.popt.get_visibility(bins_cum_center, th)
+           for th in bins_cum_center]
+fid_sin, fid_tri, vis = map(np.array, zip(*results))
+plt.figure(figsize=(4,2.5))
+plt.plot(bins_cum_center, fid_sin, label="$F_s$")
+plt.plot(bins_cum_center, fid_tri, label="$F_t$")
+plt.plot(bins_cum_center, vis, label="$V$")
+plt.ylim(.8, 1)
+plt.legend()
+plt.ylabel("Fidelity/Visibility")
+plt.xlabel("Demod bin (a.u.)")
+
+plt.xlim(optimal_fit.threshold*.996, optimal_fit.threshold*1.004)
+
+
 # %% [markdown]
-# # Trouver le taux tunnel
+# # Balayage de la vitesse de rampe: trouver le taux tunnel
 # Cette expérience traverse l'anti-croisement à différentes vitesses et trace la les proportions de singulets/triplets préparés.
 
 # %% [markdown]
@@ -731,7 +750,7 @@ plt.ylabel("Singlet initialisation probability (%)")
 plt.tight_layout()
 
 # %% [markdown]
-# # Varier le point de loading
+# # Balayage du point de loading
 # ## Code de mesure
 
 # %%
