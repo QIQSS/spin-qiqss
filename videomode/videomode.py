@@ -81,6 +81,7 @@ path = make_path_fn(data_path)
 
 # %%
 from config import qop_ip, cluster_name, u, config, cw_len
+from utils import videomode_lib
 from videomode_lib.videomode import VideoModeWindow, Sweep
 
 short_axis = Sweep.from_nbpts(-20e-3, 20e-3, 31, "P1", 21, interlace=0)
