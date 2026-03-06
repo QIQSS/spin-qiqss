@@ -1,30 +1,29 @@
+from params import *
 import numpy as np
-from qualang_tools.units import unit
-from qualang_tools.config.waveform_tools import flattop_cosine_waveform
+from qualang_tools.config.helper_tools import QuaConfig
+from copy import deepcopy
+
 
 
 ######################
 # Network parameters #
 ######################
-qop_ip = "192.168.137.169"  # Write the QM router IP address
+qop_ip = "192.168.0.11"  # Write the QM router IP address
 cluster_name = "Cluster_1"  # Write your cluster_name if version >= QOP220
 con = "con1"
 
 lf_num = 1
 
 RF_SET1_port = 8
-P1_port = 1
-P2_port = 4
+B2_port = 1
+P2_port = 2
+P3_port = 4
 
 sampling_rate_gate = int(1e9)  # or, int(1e9)
 sampling_rate_rf = int(2e9)
-u = unit(coerce_to_integer=True)
 
 # Time of flight
-time_of_flight = 164
-
-cw_len = 5_000
-flattop_cosine = flattop_cosine_waveform(1, 500, 100) # 100 + 500 + 100
+time_of_flight = 540
 
 
 #############################################
@@ -39,27 +38,41 @@ config = {
                     "type": "LF",
                     "analog_outputs": {
                         RF_SET1_port: {
-                            "offset": 0.068,  # Amplified +- 2.5
+                            "offset": 0.012,  # direct
+                            # "offset": 0.0677,  # amplified
                             "sampling_rate": sampling_rate_rf,
-                            "output_mode": "amplified",
-                        },
-                        P1_port: {
-                            # "offset": 0.008,  # Direct +- .5
-                            "offset": 0.045,  # Amplified
-                            "sampling_rate": sampling_rate_gate,
-                            "output_mode": "amplified",
-                            "filter": {
-                                #"exponential": [(100, 180_000_000)],
-                            },
+                            "output_mode": "direct",
                         },
                         P2_port: {
-                            # "offset": 0.001,  # Direct
-                            "offset": 0.017,  # Amplified
+                            # "offset": 0.0436,  # amplified
+                            "offset": 0.0075,
                             "sampling_rate": sampling_rate_gate,
-                            "output_mode": "amplified",
+                            "output_mode": "direct",
                             "filter": {
-                                "exponential": [(100, 17703)],
+                                # "exponential": [(100, 625_000_000)],
                             },
+                        },
+                        P3_port: {
+                            # "offset": 0.0166,  # amplified
+                            "offset": 0.0015,
+                            "sampling_rate": sampling_rate_gate,
+                            "output_mode": "direct",
+                            "filter": {
+                                # "exponential": [(100, 625_000_000)],
+                            },
+                        },
+                        B2_port: {
+                            "offset": 0.0075,
+                            "sampling_rate": sampling_rate_gate,
+                            "output_mode": "direct",
+                            "filter": {
+                                # "exponential": [(100, 625_000_000)],
+                            },
+                        },
+                        7: {
+                            "offset": 0.0098,  # direct
+                            "sampling_rate": sampling_rate_rf,
+                            "output_mode": "direct",
                         },
                     },
                     "analog_inputs": {
@@ -75,9 +88,7 @@ config = {
                         }, 
                     },
                     "digital_outputs": {
-                        1: {
-                            "inverted": True
-                        },
+                        1: {},
                     },
                 },
             },
@@ -89,18 +100,18 @@ config = {
                 "port": (con, lf_num, RF_SET1_port)
             },
             "outputs": {
-                "out1": (con, lf_num, 1),
-                "out2": (con, lf_num, 2)
+                "out": (con, lf_num, 1),
             },
             "time_of_flight": time_of_flight,
-            "intermediate_frequency": 5e5,
+            "intermediate_frequency": 322.4e6,
             "operations": {
                 "readout": "meas_pulse",
-            }
+                "readout_short": "meas_pulse_short",
+            },
         },
-        "P1": {
+        "P2": {
             "singleInput": {
-                "port": (con, lf_num, P1_port)
+                "port": (con, lf_num, P2_port)
             },
             "intermediate_frequency": 0,
             "operations": {
@@ -111,9 +122,22 @@ config = {
                 "duration": 1000 # ramp to zero duration
             }
         },
-        "P2": {
+        "P3": {
             "singleInput": {
-                "port": (con, lf_num, P2_port)
+                "port": (con, lf_num, P3_port)
+            },
+            "intermediate_frequency": 0,
+            "operations": {
+                "step": "control_pulse",
+            },
+            "sticky": {
+                "analog": True,
+                "duration": 1000 # ramp to zero duration
+            }
+        },
+        "B2": {
+            "singleInput": {
+                "port": (con, lf_num, B2_port)
             },
             "intermediate_frequency": 0,
             "operations": {
@@ -131,8 +155,8 @@ config = {
             "digitalInputs": {
                 "trig": {
                     "port": (con, lf_num, 1),
-                    "delay": 2*cw_len,
-                    "buffer": 100,
+                    "delay": 0,
+                    "buffer": 0,
                 },
             },
             "time_of_flight": time_of_flight,
@@ -140,6 +164,33 @@ config = {
             "operations": {
                 "raw": "raw_pulse",
             }
+        },
+        "Trigger": {
+            "singleInput": {
+                "port": (con, lf_num, 1)
+            },
+            "intermediate_frequency": 0,
+            "operations": {
+                "step": "control_pulse",
+            },
+            "sticky": {
+                "analog": True,
+                "duration": 1000 # ramp to zero duration
+            }
+        },
+        "RF": {
+            "singleInput": {
+                "port": (con, lf_num, 7)
+            },
+            "outputs": {
+                "out": (con, lf_num, 2)
+            },
+            "time_of_flight": time_of_flight,
+            "intermediate_frequency": 1e6,
+            "operations": {
+                "readout": "meas_pulse",
+                "readout_short": "meas_pulse_short",
+            },
         },
     },
     "pulses": {
@@ -153,6 +204,18 @@ config = {
             "integration_weights": {
                 "cos": "cosine_weights",
                 "sin": "sine_weights",
+            },
+        },
+        "meas_pulse_short": {
+            "operation": "measurement",
+            "length": cw_len_short,
+            "waveforms": {
+                "single": "cst_wf",
+            },
+            "digital_marker": "ON",
+            "integration_weights": {
+                "cos": "cosine_weights_short",
+                "sin": "sine_weights_short",
             },
         },
         "control_pulse": {
@@ -171,8 +234,7 @@ config = {
     },
     "waveforms": {
         "zero_wf": {"type": "constant", "sample": 0.0},
-        "cst_wf": {"type": "constant", "sample": 1.0},
-        "test_wf": {"type": "arbitrary", "samples": flattop_cosine}
+        "cst_wf": {"type": "constant", "sample": 0.1},
     },
     "digital_waveforms": {
         "ON": {"samples": [(1, 0)]},
@@ -187,5 +249,20 @@ config = {
             "cosine": [(0.0, cw_len)],
             "sine": [(1.0, cw_len)],
         },
+        "cosine_weights_short": {
+            "cosine": [(1.0, cw_len_short)],
+            "sine": [(0.0, cw_len_short)],
+        },
+        "sine_weights_short": {
+            "cosine": [(0.0, cw_len_short)],
+            "sine": [(1.0, cw_len_short)],
+        },
     },
 }
+
+config_copy = deepcopy(config)
+config = QuaConfig(config)
+config.update_integration_weight("RF-SET1", "readout", "cos", [(np.cos(iq_phase), cw_len)], [(np.sin(iq_phase), cw_len)])
+config.update_integration_weight("RF-SET1", "readout", "sin", [(np.cos(iq_phase+np.pi/2), cw_len)], [(np.sin(iq_phase+np.pi/2), cw_len)])
+config.update_integration_weight("RF-SET1", "readout_short", "cos", [(np.cos(iq_phase), cw_len_short)], [(np.sin(iq_phase), cw_len_short)])
+config.update_integration_weight("RF-SET1", "readout_short", "sin", [(np.cos(iq_phase+np.pi/2), cw_len_short)], [(np.sin(iq_phase+np.pi/2), cw_len_short)])
