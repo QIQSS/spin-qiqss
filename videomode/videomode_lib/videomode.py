@@ -133,7 +133,7 @@ class VideoModeWindow(QMainWindow):
             return res
 
         def saveto(data_2d):
-            filename = save_path+"%T_"+out_name+".hdf5"
+            filename = save_path+"%T_vm_"+out_name+".hdf5"
             filename = expand_filename(filename)
 
             dialog = PasteDialog.PasteDialog()
@@ -302,7 +302,7 @@ class VideoModeWindow(QMainWindow):
         self.graph: pg.PlotWidget = pg.PlotWidget()
         self.graph.plotItem.setLabel(axis="bottom", text=xlabel)
         self.graph.plotItem.setLabel(axis="left", text=ylabel)
-
+        self.graph.plotItem.showGrid(True, True, 0.9)
         self.curve: pg.PlotDataItem = self.graph.plot()
         self.image: pg.ImageItem = pg.ImageItem()
         if dim == 2:
