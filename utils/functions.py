@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.special import erf
+from scipy.integrate import quad
 
 # Fonctions pour les probabilités des distribution des états S et T
 def gaussian(x, mu, sigma):

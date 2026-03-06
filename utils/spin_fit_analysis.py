@@ -2,11 +2,14 @@ import numpy as np
 from scipy.optimize import curve_fit, root_scalar
 from scipy.signal import find_peaks
 from scipy.integrate import quad
-from dataclasses import dataclass
+from dataclasses import dataclass, astuple
 from typing import NamedTuple, Self
 import matplotlib.pyplot as plt
 
-from functions import fidelity_singlet, fidelity_triplet, distribution_ST
+from functions import \
+    fidelity_singlet, fidelity_triplet, \
+    distribution_singlet, distribution_triplet, \
+    distribution_ST
 
 class DistributionSTParams(NamedTuple):
     """ Object immuable représentant le résultat d'un fit.
@@ -81,7 +84,7 @@ class DistributionSTFitResults:
         p0=None, 
         find_threshold=False,
         compute_visibility=False,
-        debug_plot=False
+        verbosity=0
     ) -> Self:
         """
         Cette fonction ajuste la fonction `distribution_ST()` à un ensemble de données (normalisées) passé en arguments.
@@ -107,81 +110,81 @@ class DistributionSTFitResults:
             6: Affichage des distributions singulet et triplet individuelles
         """
 
-    results = DistributionSTFitResults()
-    norm_factor = (x_values[1] - x_values[0]) * histogram.sum()  # Facteur de normalisation pour que l'intégrale sur l'ensemble des valeurs soit 1.
-    
-    if compute_visibility:  # Il faut le threshold pour calculer la visibilité.
-        find_threshold = True
-    
-    if verbosity >= 4:
-        plt.figure(figsize=(6, 4))
-        plt.plot(x_values, histogram, label="Histogram")
+        results = DistributionSTFitResults()
+        norm_factor = (x_values[1] - x_values[0]) * histogram.sum()  # Facteur de normalisation pour que l'intégrale sur l'ensemble des valeurs soit 1.
+        
+        if compute_visibility:  # Il faut le threshold pour calculer la visibilité.
+            find_threshold = True
+        
+        if verbosity >= 4:
+            plt.figure(figsize=(6, 4))
+            plt.plot(x_values, histogram, label="Histogram")
 
-    # Paramètres initiaux de fit
-    if p0 is None:
-        peaks = find_peaks(histogram, height=0.05*histogram.max(), width=len(histogram)//100)[0][[0, -1]]  # Index des pics
-        amps0 = histogram[peaks]  # Amplitudes des pics
-        Ps0 = amps0[0] / amps0.sum()  # Probabilité initiale du singulet
-        mus0, mut0 = x_values[peaks]  # Position des pics
-        sigma0 = (mut0 - mus0) / 6  # Estimation initiale de sigma
+        # Paramètres initiaux de fit
+        if p0 is None:
+            peaks = find_peaks(histogram, height=0.05*histogram.max(), width=len(histogram)//100)[0][[0, -1]]  # Index des pics
+            amps0 = histogram[peaks]  # Amplitudes des pics
+            Ps0 = amps0[0] / amps0.sum()  # Probabilité initiale du singulet
+            mus0, mut0 = x_values[peaks]  # Position des pics
+            sigma0 = (mut0 - mus0) / 6  # Estimation initiale de sigma
 
-        p0 = DistributionSTParams(Ps0, 1, mus0, mut0, sigma0)
+            p0 = DistributionSTParams(Ps0, 1, mus0, mut0, sigma0)
 
-        if verbosity >= 5:
-            plt.plot(x_values, norm_factor * distribution_ST(x_values, *p0), label="Distribution before fit")
-            plt.scatter(x_values[peaks], histogram[peaks], c="red", label="Peaks used as initial guess")
+            if verbosity >= 5:
+                plt.plot(x_values, norm_factor * distribution_ST(x_values, *p0), label="Distribution before fit")
+                plt.scatter(x_values[peaks], histogram[peaks], c="red", label="Peaks used as initial guess")
+                plt.legend()
+
+        bounds_min = (0, 0, x_values.min(), x_values.min(), 0)
+        bounds_max = (1, np.inf, x_values.max(), x_values.max(), np.inf)
+
+        # Fit de la distribution
+        try:
+            popt_unnamed, cov = curve_fit(distribution_ST, x_values, histogram / norm_factor, p0=p0, bounds=(bounds_min, bounds_max))
+            popt = DistributionSTParams(*popt_unnamed)
+            results.popt = popt
+            if verbosity >= 1:
+                print(f"Fit parameters: Ps={popt.Ps}, tm/T1={popt.tm_over_T1}, mus={popt.mus}, mut={popt.mut}, sigma={popt.sigma}")
+        except:
+            results.popt = DistributionSTParams(*([None]*5))
+            if verbosity >= 1:
+                print("Fit failed.")
+            return results
+
+        if verbosity >= 4:
+            plt.plot(x_values, norm_factor * distribution_ST(x_values, *popt), label="Fitted distribution")
+        
+        if verbosity >= 6:
+            plt.plot(x_values, norm_factor * popt.Ps * distribution_singlet(x_values, popt.mus, popt.sigma), label="Singlet distribution", ls=":")
+            plt.plot(x_values, norm_factor * (1-popt.Ps) * distribution_triplet(x_values, popt.tm_over_T1, popt.mus, popt.mut, popt.sigma), label="Triplet distribution", ls=":")
+
+        # Trouver le threshold
+        if find_threshold:
+            results.threshold = results.popt.find_optimal_threshold(x_values)
+
+            if verbosity >= 2:
+                print(f"Optimal threshold: {results.threshold}")
+
+            if verbosity >= 4 and results.threshold is not None:
+                plt.axvline(results.threshold, ls="--", c="red", label="Threshold")
+        
+        # Calculer la visibilité
+        if compute_visibility and results.threshold is not None:
+            fid_sin, fid_tri, vis = results.popt.get_visibility(x_values, results.threshold)
+            results.singlet_fidelity = fid_sin
+            results.triplet_fidelity = fid_tri
+            results.visibility = vis
+
+            if verbosity >= 2:
+                print(f"Visibility: {vis}")
+
+        if verbosity >= 4:
+            plt.xlabel("X values (a.u.)")
+            plt.ylabel("Counts (normalized)")
             plt.legend()
+            plt.tight_layout()
 
-    bounds_min = (0, 0, x_values.min(), x_values.min(), 0)
-    bounds_max = (1, np.inf, x_values.max(), x_values.max(), np.inf)
-
-    # Fit de la distribution
-    try:
-        popt_unnamed, cov = curve_fit(distribution_ST, x_values, histogram / norm_factor, p0=p0, bounds=(bounds_min, bounds_max))
-        popt = DistributionSTParams(*popt_unnamed)
-        results.popt = popt
-        if verbosity >= 1:
-            print(f"Fit parameters: Ps={popt.Ps}, tm/T1={popt.tm_over_T1}, mus={popt.mus}, mut={popt.mut}, sigma={popt.sigma}")
-    except:
-        results.popt = DistributionSTParams(*([None]*5))
-        if verbosity >= 1:
-            print("Fit failed.")
         return results
-
-    if verbosity >= 4:
-        plt.plot(x_values, norm_factor * distribution_ST(x_values, *popt), label="Fitted distribution")
-    
-    if verbosity >= 6:
-        plt.plot(x_values, norm_factor * popt.Ps * distribution_singlet(x_values, popt.mus, popt.sigma), label="Singlet distribution", ls=":")
-        plt.plot(x_values, norm_factor * (1-popt.Ps) * distribution_triplet(x_values, popt.tm_over_T1, popt.mus, popt.mut, popt.sigma), label="Triplet distribution", ls=":")
-
-    # Trouver le threshold
-    if find_threshold:
-        results.threshold = results.popt.find_optimal_threshold(x_values)
-
-        if verbosity >= 2:
-            print(f"Optimal threshold: {results.threshold}")
-
-        if verbosity >= 4 and results.threshold is not None:
-            plt.axvline(results.threshold, ls="--", c="red", label="Threshold")
-    
-    # Calculer la visibilité
-    if compute_visibility and results.threshold is not None:
-        fid_sin, fid_tri, vis = results.popt.get_visibility(x_values, results.threshold)
-        results.singlet_fidelity = fid_sin
-        results.triplet_fidelity = fid_tri
-        results.visibility = vis
-
-        if verbosity >= 2:
-            print(f"Visibility: {vis}")
-
-    if verbosity >= 4:
-        plt.xlabel("X values (a.u.)")
-        plt.ylabel("Counts (normalized)")
-        plt.legend()
-        plt.tight_layout()
-
-    return results
 
 def find_adaptative_thresholds(data, n_slices=1, resolution=1, long_axis=0, bins=401):
     """

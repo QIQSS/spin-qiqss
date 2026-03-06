@@ -9,7 +9,7 @@ cw_readout_freq = 540.35 * u.MHz
 cw_amp = 15e-3
 
 # Compensation du montage
-max_compensation_amp = 0.005
+max_compensation_amp = 0.007
 attenuation_db = 21
 gain = 10**(attenuation_db / 20)
 
@@ -17,11 +17,12 @@ gain = 10**(attenuation_db / 20)
 gates = ["P2", "P3"]
 operation_points = [
     ["zero_dc", 0, 0, 0],
-    ["init", 0.004, -0.004, 50_000],
-    ["load", -0.002, 0.002, 0],
-    ["readout", *(-0.00049, 0.00049), cw_len],
+    ["init", 0.007, -0.007, 1_000],
+    ["load", -0.004, 0.004, 0],
+    ["load_deep", -0.007, 0.007, 0],
+    ["readout", *(-0.0003, 0.0003), cw_len],
 ]
 
 # Autres
-iq_phase = 0.54
-threshold = -0.00506551153738093
+iq_phase = 0.8
+threshold = -0.301
