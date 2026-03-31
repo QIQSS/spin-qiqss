@@ -15,9 +15,11 @@ con = "con1"
 lf_num = 1
 
 RF_SET1_port = 8
-B2_port = 1
+RF_SET1_in = 1
+B2_port = 5
 P2_port = 2
 P3_port = 4
+Trigger_port = 6
 
 sampling_rate_gate = int(1e9)  # or, int(1e9)
 sampling_rate_rf = int(2e9)
@@ -69,9 +71,9 @@ config = {
                                 # "exponential": [(100, 625_000_000)],
                             },
                         },
-                        7: {
-                            "offset": 0.0098,  # direct
-                            "sampling_rate": sampling_rate_rf,
+                        Trigger_port: {
+                            "offset": 0.000,  # direct
+                            "sampling_rate": sampling_rate_gate,
                             "output_mode": "direct",
                         },
                     },
@@ -100,7 +102,7 @@ config = {
                 "port": (con, lf_num, RF_SET1_port)
             },
             "outputs": {
-                "out": (con, lf_num, 1),
+                "out": (con, lf_num, RF_SET1_in),
             },
             "time_of_flight": time_of_flight,
             "intermediate_frequency": 322.4e6,
@@ -167,7 +169,7 @@ config = {
         },
         "Trigger": {
             "singleInput": {
-                "port": (con, lf_num, 1)
+                "port": (con, lf_num, Trigger_port)
             },
             "intermediate_frequency": 0,
             "operations": {
@@ -177,20 +179,6 @@ config = {
                 "analog": True,
                 "duration": 1000 # ramp to zero duration
             }
-        },
-        "RF": {
-            "singleInput": {
-                "port": (con, lf_num, 7)
-            },
-            "outputs": {
-                "out": (con, lf_num, 2)
-            },
-            "time_of_flight": time_of_flight,
-            "intermediate_frequency": 1e6,
-            "operations": {
-                "readout": "meas_pulse",
-                "readout_short": "meas_pulse_short",
-            },
         },
     },
     "pulses": {

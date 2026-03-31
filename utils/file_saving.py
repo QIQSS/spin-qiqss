@@ -84,6 +84,7 @@ def _check_ax_args(ax_names, ax_values):
     Génère les noms si ax_names est la liste vide.
     Génère un arange(0, val, 1) si un des ax_value est un entier
     """
+    ax_values = list(ax_values)
     if ax_names != []:
         for i, ax_value in enumerate(ax_values):
             if isinstance(ax_value, int):

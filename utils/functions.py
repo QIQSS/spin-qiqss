@@ -2,6 +2,8 @@ import numpy as np
 from scipy.special import erf
 from scipy.integrate import quad
 
+# Répertoire de fonctions mathématiques
+
 # Fonctions pour les probabilités des distribution des états S et T
 def gaussian(x, mu, sigma):
     """
@@ -23,7 +25,7 @@ def distribution_singlet(x, mus, sigma):
     """
     return gaussian(x, mus, sigma)
 
-def distribution_triplet(x, tm_over_T1, mus, mut, sigma):
+def distribution_triplet(x, tm_over_T1, mus, mut, sigma, separate_relaxation=False):
     """
     Distribution des points d'un ensemble de mesure d'états triplets.
     Cette distribution modélise des états triplets (distribution gaussienne)
@@ -35,9 +37,12 @@ def distribution_triplet(x, tm_over_T1, mus, mut, sigma):
         mus: Moyenne de la distribution de l'état S.
         mut: Moyenne de la distribution de l'état T.
         sigma: Écart-type commun aux deux distributions.
+        separate_relaxation: Si True, retourne les termes 1 et 2, associés à 
+            la relaxation de l'état T vers S.
     
     Returns:
-        Valeurs de la distribution aux points x.
+        Si separate_relaxation est False: Valeurs de la distribution aux points x.
+        Si separate_relaxation est True: (Valeurs de la distribution aux points x, (terme sans relaxation, terme relaxé)).
     """
     delta_mu = mut - mus
     mu_bar = x - sigma**2 * tm_over_T1 / delta_mu
@@ -47,6 +52,9 @@ def distribution_triplet(x, tm_over_T1, mus, mut, sigma):
         np.exp(tm_over_T1 / delta_mu * (mus - x + sigma**2 * tm_over_T1 / (2 * delta_mu))) * \
         (erf((mut - mu_bar) / (np.sqrt(2) * sigma)) - erf((mus - mu_bar) / (np.sqrt(2) * sigma)))
     
+    if separate_relaxation:
+        return terme1 + terme2, (terme1, terme2)
+
     return terme1 + terme2
 
 def distribution_ST(x, Ps, tm_over_T1, mus, mut, sigma):
@@ -97,3 +105,28 @@ def fidelity_triplet(threshold, tm_over_T1, mus, mut, sigma):
         La fidélité
     """
     return 1 - quad(lambda x: distribution_triplet(x, tm_over_T1, mus, mut, sigma), mut-100*sigma, threshold)[0]
+
+def oscillations_rabi(t, Ps0, T2, f0, ramp_time_correction):
+    """
+    Fonction d'une oscillation dans le temps, normalisée et doublement amortie
+
+    Args:
+        Ps0: hauteur de la première oscillation
+        T1: amortissement de la moyenne
+        T2: amortissement des oscillations
+        f0: fréquence
+        ramp_time_correction: décalage du temps pour tenir compte de la rampe
+    Returns:
+        la fonction...
+    """
+    t_ = t + ramp_time_correction  # Déplacement du temps
+
+    relax = 1 / 2
+    decoh = Ps0/2 * np.exp(-t_ / T2) * np.cos(2*np.pi*f0*t_)
+
+    return relax + decoh
+
+def oscillations_rabi_fourier(f, A, T1, f0):
+    num = 1/T1 + 2.j*np.pi*f
+    den = num**2 + 4 * np.pi**2 * f0**2
+    return A/2 * num / den

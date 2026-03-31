@@ -150,10 +150,20 @@ def duplicate_element(config, name, nb: int = 2):
     return [name] + new_elements
 
 def make_gate_sequence(config:dict, gates:list[str], points, gain:float) -> VoltageGateSequence:
+    """
+    gates = ["P2", "P3", "B2]
+    points = [
+        ["name", V_p2, V_p3, V_b2, default_duration]
+        ["name2", V_p2, V_p3, V_b2, default_duration]
+    ]
+    """
     sequence = VoltageGateSequence(config, gates)
-    for pts_name, x, y, time in points:
-        x, y = gain*x, gain*y
-        sequence.add_points(pts_name, [x, y], time)
+    for point in points:
+        sequence.add_points(
+            name = point[0],
+            coordinates = [voltage*gain for voltage in point[1:-1]],
+            duration = point[-1]
+        )
     return sequence
 
 
